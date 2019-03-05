@@ -12,6 +12,7 @@ import (
 	"sync"
 	"text/tabwriter"
 
+	core "github.com/ipfs/go-ipfs/core"
 	cmdenv "github.com/ipfs/go-ipfs/core/commands/cmdenv"
 	corerepo "github.com/ipfs/go-ipfs/core/corerepo"
 	fsrepo "github.com/ipfs/go-ipfs/repo/fsrepo"
@@ -19,6 +20,8 @@ import (
 	cmds "gx/ipfs/QmQkW9fnCsg9SLHdViiAh6qfBppodsPZVpU92dZLqYtEfs/go-ipfs-cmds"
 	cid "gx/ipfs/QmTbxNB1NwDesLmKTscr4udL2tVP7MaxvXnD1D9yX7g3PN/go-cid"
 	config "gx/ipfs/QmUAuYuiafnJRZxDDX7MuruMNsicYNuyub5vUeAcupUBNs/go-ipfs-config"
+	ds "gx/ipfs/QmUadX5EcvrBmxAV9sE7wUWtWSqxns5K84qKJBixmcT1w9/go-datastore"
+	b58 "gx/ipfs/QmWFAMPqsEyUX7gDUsRVmMWz59FxSpJ1b2v6bJ1yYzo7jY/go-base58-fast/base58"
 	bstore "gx/ipfs/QmXjKkjMDTtXAiLBwstVexofB8LeruZmE2eBd85GwGFFLA/go-ipfs-blockstore"
 	cmdkit "gx/ipfs/Qmde5VP1qUkyQXKCfmEUA7bP64V2HAptbJ7phuPp7jXWwg/go-ipfs-cmdkit"
 )
@@ -36,11 +39,12 @@ var RepoCmd = &cmds.Command{
 	},
 
 	Subcommands: map[string]*cmds.Command{
-		"stat":    repoStatCmd,
-		"gc":      repoGcCmd,
-		"fsck":    repoFsckCmd,
-		"version": repoVersionCmd,
-		"verify":  repoVerifyCmd,
+		"stat":          repoStatCmd,
+		"gc":            repoGcCmd,
+		"fsck":          repoFsckCmd,
+		"version":       repoVersionCmd,
+		"verify":        repoVerifyCmd,
+		"rm-files-root": repoRmFilesRootCmd,
 	},
 }
 
@@ -258,6 +262,89 @@ daemons are running.
 		cmds.Text: cmds.MakeTypedEncoder(func(req *cmds.Request, w io.Writer, out *MessageOutput) error {
 			fmt.Fprintf(w, out.Message)
 			return nil
+		}),
+	},
+}
+
+var repoRmFilesRootCmd = &cmds.Command{
+	Helptext: cmdkit.HelpText{
+		Tagline: "Unlink the root used by the `ipfs files` comands.",
+		ShortDescription: `
+'ipfs repo rm-files-root' will unlink the root used by the files API ('ipfs
+files' commands) without trying to read the root itself.  The root and
+its children will be removed the next time the garbage collector runs,
+unless pinned.
+
+This command is designed to recover form the situation when the root
+becomes unavailable and recovering it (such as recreating it, or
+fetching it from the network) is not possible.  This command should
+only be used as a last resort as using this command could lead to data
+loss if there are unpinned nodes connected to the root.
+
+This command can only run when the ipfs daemon is not running.
+`,
+	},
+	Options: []cmdkit.Option{
+		cmdkit.BoolOption("confirm", "Really perform operation."),
+		cmdkit.BoolOption("remove-existing-root", "Remove even if it root exists locally."),
+	},
+	Run: func(req *cmds.Request, res cmds.ResponseEmitter, env cmds.Environment) error {
+		confirm, _ := req.Options["confirm"].(bool)
+		removeExistingRoot, _ := req.Options["remove-existing-root"].(bool)
+
+		if !confirm {
+			return fmt.Errorf("this is a potentially dangerous operation please pass --confirm to proceed")
+		}
+
+		configRoot, err := cmdenv.GetConfigRoot(env)
+		if err != nil {
+			return err
+		}
+
+		// Can't use a full node as that interferes with the removal
+		// of the files root, so open the repo directly
+		repo, err := fsrepo.Open(configRoot)
+		if err != nil {
+			return err
+		}
+		defer repo.Close()
+		bs := bstore.NewBlockstore(repo.Datastore())
+
+		// Get the old root and display it to the user so that they can
+		// can do something to prevent from being garbage collected,
+		// such as pin it
+		val, err := repo.Datastore().Get(core.FilesRootKey)
+		if err == ds.ErrNotFound || val == nil {
+			return cmds.EmitOnce(res, &MessageOutput{"`ipfs files` root not found.\n"})
+		}
+
+		var cidStr string
+		var have bool
+		c, err := cid.Cast(val)
+		if err == nil {
+			cidStr = c.String()
+			have, _ = bs.Has(c)
+		} else {
+			cidStr = b58.Encode(val)
+		}
+
+		if have && !removeExistingRoot {
+			return fmt.Errorf("`ipfs files` root %s exists locally. Are you sure you want to unlink this? Pass --remove-existing-root to continue", cidStr)
+		}
+
+		err = repo.Datastore().Delete(core.FilesRootKey)
+		if err != nil {
+			return fmt.Errorf("unable to remove `ipfs files` root: %s.  Root hash was %s", err.Error(), cidStr)
+		}
+		return cmds.EmitOnce(res, &MessageOutput{
+			fmt.Sprintf("Unlinked files API root.  Root hash was %s.\n", cidStr),
+		})
+	},
+	Type: MessageOutput{},
+	Encoders: cmds.EncoderMap{
+		cmds.Text: cmds.MakeTypedEncoder(func(req *cmds.Request, w io.Writer, msg *MessageOutput) error {
+			_, err := fmt.Fprintf(w, "%s", msg.Message)
+			return err
 		}),
 	},
 }

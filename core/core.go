@@ -80,6 +80,9 @@ import (
 
 const IpnsValidatorTag = "ipns"
 
+// FilesRootKey is the datastore key for the files root.
+var FilesRootKey ds.Key = ds.NewKey("/local/filesroot")
+
 const kReprovideFrequency = time.Hour * 12
 const discoveryConnTimeout = time.Second * 30
 const DefaultIpnsCacheSize = 128
@@ -856,13 +859,12 @@ func (n *IpfsNode) loadBootstrapPeers() ([]pstore.PeerInfo, error) {
 }
 
 func (n *IpfsNode) loadFilesRoot() error {
-	dsk := ds.NewKey("/local/filesroot")
 	pf := func(ctx context.Context, c cid.Cid) error {
-		return n.Repo.Datastore().Put(dsk, c.Bytes())
+		return n.Repo.Datastore().Put(FilesRootKey, c.Bytes())
 	}
 
 	var nd *merkledag.ProtoNode
-	val, err := n.Repo.Datastore().Get(dsk)
+	val, err := n.Repo.Datastore().Get(FilesRootKey)
 
 	switch {
 	case err == ds.ErrNotFound || val == nil:
