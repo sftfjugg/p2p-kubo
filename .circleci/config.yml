@@ -118,24 +118,46 @@ jobs:
     - store_artifacts:
         path: /tmp/circleci-test-results
   sharness:
-    executor: golang
+    resource_class: 2xlarge
+#     executor: golang
+    machine:
+        image: ubuntu-1604:202007-01
     steps:
     - run: sudo apt install socat
     - checkout
+#     - setup_remote_docker:
+#         version: "18.09.3"
     - *make_out_dirs
-    - *restore_gomod
+    # - *restore_gomod
+    - run:
+        name: Build sharness Docker image
+        command: |
+          docker build -t ipfs/go-ipfs-sharness -f ./Dockerfile.sharness .
+    - run:
+        name: Prepare result directories
+        command: |
+                mkdir -p /tmp/circleci-artifacts /tmp/circleci-workspace /tmp/circleci-test-results/unit /tmp/circleci-test-results/sharness
+    - run:
+        name: Run sharness container
+        no_output_timeout: 30m
+        command: |
+                docker run --cpus=2 --memory=30g --name sharness_container -ti ipfs/go-ipfs-sharness && \
+                docker cp sharness_container:/go-ipfs/coverage/sharness_tests.coverprofile ./ && \
+                docker cp sharness_container:/go-ipfs/test/sharness/test-results/sharness.xml /tmp/circleci-test-results/sharness/ && \
+                docker cp sharness_container:/go-ipfs/test ./
 
-    - run: make -O -j 10 coverage/sharness_tests.coverprofile test/sharness/test-results/sharness.xml TEST_GENERATE_JUNIT=1 CONTINUE_ON_S_FAILURE=1
+#     - run: make -O -j 10 coverage/sharness_tests.coverprofile test/sharness/test-results/sharness.xml TEST_GENERATE_JUNIT=1 CONTINUE_ON_S_FAILURE=1
 
     - run:
         when: always
-        command: bash <(curl -s https://codecov.io/bash) -cF sharness -X search -f coverage/sharness_tests.coverprofile
+        command: bash <(curl -s https://codecov.io/bash) -cF sharness -X search -f sharness_tests.coverprofile
 
     - run: mv "test/sharness/test-results/sharness.xml" /tmp/circleci-test-results/sharness
+
     # make sure we fail if there are test failures
     - run: find test/sharness/test-results -name 't*-*.sh.*.counts' | test/sharness/lib/sharness/aggregate-results.sh | grep 'failed\s*0'
 
-    - *store_gomod
+    # - *store_gomod
 
     - store_test_results:
         path: /tmp/circleci-test-results
