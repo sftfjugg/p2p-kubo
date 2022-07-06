@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ipfs/go-ipfs/config"
 )
 
 var (
@@ -13,8 +15,7 @@ var (
 
 func TestRepoDir(t *testing.T) {
 	fakeHome = t.TempDir()
-	os.Setenv("HOME", fakeHome)
-	fakeIpfs = filepath.Join(fakeHome, ".ipfs")
+	os.Setenv(config.EnvDir, filepath.Join(fakeHome, ".ipfs"))
 
 	t.Run("testIpfsDir", testIpfsDir)
 	t.Run("testCheckIpfsDir", testCheckIpfsDir)
@@ -40,7 +41,7 @@ func testIpfsDir(t *testing.T) {
 		t.Fatal("wrong ipfs directory:", dir)
 	}
 
-	os.Setenv(envIpfsPath, "~/.ipfs")
+	os.Setenv(config.EnvDir, "~/.ipfs")
 	dir, err = IpfsDir("")
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +55,7 @@ func testIpfsDir(t *testing.T) {
 		t.Fatal("expected error with user-specific home dir")
 	}
 
-	err = os.Setenv(envIpfsPath, "~somesuer/foo")
+	err = os.Setenv(config.EnvDir, "~somesuer/foo")
 	if err != nil {
 		panic(err)
 	}
@@ -62,7 +63,7 @@ func testIpfsDir(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error with user-specific home dir")
 	}
-	err = os.Unsetenv(envIpfsPath)
+	err = os.Unsetenv(config.EnvDir)
 	if err != nil {
 		panic(err)
 	}
