@@ -25,6 +25,12 @@ func RelayTransport(enableRelay bool) func() (opts Libp2pOpts, err error) {
 func RelayService(enable bool, relayOpts config.RelayService) func() (opts Libp2pOpts, err error) {
 	return func() (opts Libp2pOpts, err error) {
 		if enable {
+			// If user explicitly removed limits
+			if relayOpts.InfiniteLimits.WithDefault(false) {
+				opts.Opts = append(opts.Opts, libp2p.EnableRelayService(relay.WithInfiniteLimits()))
+				return
+			}
+
 			def := relay.DefaultResources()
 			// Real defaults live in go-libp2p.
 			// Here we apply any overrides from user config.
@@ -63,10 +69,7 @@ func MaybeAutoRelay(staticRelays []string, cfgPeering config.Peering, enabled bo
 					}
 					static = append(static, *addr)
 				}
-				opts.Opts = append(opts.Opts, libp2p.EnableAutoRelayWithStaticRelays(
-					static,
-					autorelay.WithCircuitV1Support(),
-				))
+				opts.Opts = append(opts.Opts, libp2p.EnableAutoRelayWithStaticRelays(static))
 			}
 			return
 		})
