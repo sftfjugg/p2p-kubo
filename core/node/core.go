@@ -12,6 +12,7 @@ import (
 	"github.com/ipfs/go-filestore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
+	offlinexch "github.com/ipfs/go-ipfs-exchange-offline"
 	pin "github.com/ipfs/go-ipfs-pinner"
 	"github.com/ipfs/go-ipfs-pinner/dspinner"
 	format "github.com/ipfs/go-ipld-format"
@@ -109,7 +110,7 @@ func Dag(bs blockservice.BlockService) format.DAGService {
 }
 
 // Files loads persisted MFS root
-func Files(mctx helpers.MetricsCtx, lc fx.Lifecycle, repo repo.Repo, dag format.DAGService) (*mfs.Root, error) {
+func Files(mctx helpers.MetricsCtx, lc fx.Lifecycle, repo repo.Repo, dag format.DAGService, bs blockstore.Blockstore) (*mfs.Root, error) {
 	dsk := datastore.NewKey("/local/filesroot")
 	pf := func(ctx context.Context, c cid.Cid) error {
 		rootDS := repo.Datastore()
@@ -143,8 +144,12 @@ func Files(mctx helpers.MetricsCtx, lc fx.Lifecycle, repo repo.Repo, dag format.
 			return nil, err
 		}
 
-		rnd, err := dag.Get(ctx, c)
+		offineDag := merkledag.NewDAGService(blockservice.New(bs, offlinexch.Exchange(bs)))
+		rnd, err := offineDag.Get(ctx, c)
 		if err != nil {
+			if err == format.ErrNotFound {
+				return nil, fmt.Errorf("filesystem root not found in local repo: %s", c)
+			}
 			return nil, fmt.Errorf("error loading filesroot from DAG: %s", err)
 		}
 
