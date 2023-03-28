@@ -30,6 +30,7 @@ import (
 )
 
 func TestMessageSeenCacheTTL(t *testing.T) {
+	t.Skip("the behaviour of seen cache has changed wrt to timing and this test cannot capture this behaviour now; it also has unit tests in go-libp2p-pubsub.")
 	if err := RunMessageSeenCacheTTLTest(t, "10s"); err != nil {
 		t.Fatal(err)
 	}
