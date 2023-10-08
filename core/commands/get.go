@@ -1,6 +1,7 @@
 package commands
 
 import (
+	tar2 "archive/tar"
 	"bufio"
 	"compress/gzip"
 	"errors"
@@ -339,9 +340,14 @@ func fileArchive(f files.Node, name string, archive bool, compression int) (io.R
 			return nil, err
 		}
 
+		// if not creating an archive set the format to PAX in order to preserve nanoseconds
+		if !archive {
+			w.SetFormat(tar2.FormatPAX)
+		}
+
 		go func() {
 			// write all the nodes recursively
-			if err := w.WriteFile(f, filename); checkErrAndClosePipe(err) {
+			if err := w.WriteNode(f, filename); checkErrAndClosePipe(err) {
 				return
 			}
 			w.Close()         // close tar writer
